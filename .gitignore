@@ -1,5 +1,4 @@
 .env
-package.json
 node_modules/
 baseDeDatos.js
 fullSeed.js
