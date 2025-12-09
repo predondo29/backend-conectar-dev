@@ -1,6 +1,5 @@
 import jwt from 'jsonwebtoken';
-import pkg from '../models/user.model.js';
-const { User, buscarUsuarioSinPassword } = pkg;
+import userService from '../services/user.service.js';
 
 // Middleware PRINCIPAL: Protege las rutas y carga req.user si hay token
 export const protect = async (req, res, next) => {
@@ -20,7 +19,7 @@ export const protect = async (req, res, next) => {
       const decoded = jwt.verify(token, process.env.VITE_JWT_SECRET);
 
       // 4. Buscar el usuario asociado al ID dentro del token (sin el password)
-      req.user = await buscarUsuarioSinPassword(decoded);
+      req.user = await userService.buscarUsuarioSinPassword(decoded);
 
       // 4.5 Verificar que el usuario siga existiendo
       if (!req.user) {
@@ -32,8 +31,6 @@ export const protect = async (req, res, next) => {
       next();
 
     } catch (error) {
-      // Si el token es inválido o ha expirado
-      console.error('Error de autenticación:', error.message);
       // 🔴 BLOQUEO 2: Token inválido (expirado, modificado, etc.)
       return res.status(401).json({ message: 'No autorizado, token fallido o expirado' }); // <--- CORRECCIÓN CLAVE
     }
@@ -43,8 +40,4 @@ export const protect = async (req, res, next) => {
   if (!token) {
     return res.status(401).json({ message: 'No autorizado, no se encontró token' }); // <--- CORRECCIÓN CLAVE
   }
-
-  // Nota: Si el token existe pero no es válido, el `catch` ya devolvió un 401. 
-  // Si el `if` se ejecutó sin errores, `next()` ya se llamó.
-  // El `if (!token)` final solo es estrictamente necesario si `token` nunca se asignó.
 };

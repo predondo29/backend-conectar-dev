@@ -1,4 +1,5 @@
 .env
 node_modules/
-baseDeDatos.js
+baseDeD
 fullSeed.js
+seed.js

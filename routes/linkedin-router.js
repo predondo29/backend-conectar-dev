@@ -2,9 +2,7 @@ import express from 'express';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import axios from 'axios';
-import userModel from '../models/user.model.js';
-
-const { User } = userModel;
+import User from '../models/user.model.js'; // Importar modelo de usuario
 const router = express.Router();
 
 // Helper para parsear cookies manualmente
@@ -22,10 +20,10 @@ const parseCookies = (request) => {
 
 // Variables de entorno
 const getEnv = () => ({
-    CLIENT_ID: process.env.LINKEDIN_CLIENT_ID || process.env.VITE_LINKEDIN_CLIENT_ID,
-    CLIENT_SECRET: process.env.LINKEDIN_CLIENT_SECRET || process.env.VITE_LINKEDIN_CLIENT_SECRET,
-    REDIRECT_URI: process.env.LINKEDIN_REDIRECT_URI || process.env.VITE_LINKEDIN_REDIRECT_URI,
-    FRONTEND_FORM_URL: process.env.VITE_FRONTEND_FREELANCER_FORM_URL || 'http://localhost:5173/hacerse-freelancer',
+    CLIENT_ID: process.env.VITE_LINKEDIN_CLIENT_ID,
+    CLIENT_SECRET: process.env.VITE_LINKEDIN_CLIENT_SECRET,
+    REDIRECT_URI: process.env.VITE_LINKEDIN_REDIRECT_URI,
+    FRONTEND_FORM_URL: process.env.VITE_FRONTEND_FREELANCER_FORM_URL,
     JWT_SECRET: process.env.VITE_JWT_SECRET
 });
 
@@ -62,7 +60,6 @@ router.get('/connect', (req, res) => {
         res.redirect(authUrl);
 
     } catch (error) {
-        console.error('Error verificando token:', error);
         return res.status(401).send('No autorizado: Token inválido.');
     }
 });
@@ -78,12 +75,10 @@ router.get('/callback', async (req, res) => {
     const userId = cookies['linkedin_auth_user'];
 
     if (!state || !storedState || state !== storedState) {
-        console.error('Error de seguridad: El estado (state) no coincide.');
         return res.status(400).send('Error de seguridad: Intento de vinculación inválido.');
     }
 
     if (!userId) {
-        console.error('Error: No se encontró la sesión del usuario.');
         return res.status(401).send('Sesión expirada. Por favor intente nuevamente.');
     }
 
@@ -107,37 +102,45 @@ router.get('/callback', async (req, res) => {
 
         const { access_token } = tokenResponse.data;
 
-        // 3. Obtener datos del usuario
+        // 3. Obtener datos del usuario de LinkedIn
         const userInfoResponse = await axios.get('https://api.linkedin.com/v2/userinfo', {
             headers: { 'Authorization': `Bearer ${access_token}` }
         });
 
         const userData = userInfoResponse.data;
+        const profileURL = userData.profile || `https://www.linkedin.com/in/${userData.sub}`; // Obtener URL de perfil
 
-        // 4. Actualizar Usuario en Base de Datos
-        // Nota: La API actual de LinkedIn (v2/userinfo) no devuelve la URL pública (vanityName) sin permisos especiales (r_basicprofile).
-        // Usamos el ID (sub) para construir una URL funcional o guardamos lo que llegue.
-        const profileURL = userData.profile || `https://www.linkedin.com/in/${userData.sub}`;
+        // 4. Buscar usuario en base de datos
+        const user = await User.findById(userId);
 
-        const updatedUser = await User.findByIdAndUpdate(userId, {
-            linkedin: profileURL
-            // No cambiamos el role a 'freelancer' aquí, se hará en el formulario final si corresponde.
-        }, { new: true });
+        if (!user) {
+            return res.status(404).send('Usuario no encontrado.');
+        }
 
-        console.log('--------------------------------------------------');
-        console.log('✅ VINCULACIÓN EXITOSA Y GUARDADA');
-        console.log(`👤 Usuario: ${updatedUser.email}`);
-        console.log(`� LinkedIn: ${updatedUser.linkedin}`);
-        console.log('--------------------------------------------------');
+        // 5. Lógica condicional
+        // Si YA tiene portfolio y descripción, lo convertimos directamente
+        if (user.portfolio && user.descripcion) {
 
-        // 5. Redireccionar
-        // El usuario pidió "redirigir al dashboard". 
-        // Si tenemos una variable para el dashboard, la usamos. Si no, la raíz.
-        const dashboardUrl = process.env.VITE_FRONTEND_PROFILE_URL || 'http://localhost:5173/dashboard';
-        res.redirect(dashboardUrl);
+            user.linkedin = profileURL;    // Guardamos LinkedIn
+            user.role = 'freelancer';      // Convertimos a freelancer
+            user.isDisponible = true;      // Nos aseguramos que esté disponible (opcional)
+
+            await user.save();
+
+            // Redireccionar al Dashboard o Perfil (Asumimos base URL desde el FRONTEND_FORM_URL)
+            // Si FRONTEND_FORM_URL es "http://localhost:5173/hacerse-freelancer", obtenemos "http://localhost:5173"
+            const frontendBaseUrl = new URL(FRONTEND_FORM_URL).origin;
+            return res.redirect(`${frontendBaseUrl}/dashboard?status=success_auto_freelancer`);
+        }
+
+        // 6. Si NO tiene los datos completos, flujo normal (redirigir al formulario)
+
+        // Añadimos parámetros para que el frontend sepa que fue exitoso
+        const redirectUrl = `${FRONTEND_FORM_URL}?status=success&linkedin=${encodeURIComponent(profileURL)}`;
+        res.redirect(redirectUrl);
 
     } catch (error) {
-        console.error('❌ Error en LinkedIn Callback:', error.response?.data || error.message);
+        console.error("Error en callback de LinkedIn:", error);
         res.status(500).send('Error al vincular cuenta de LinkedIn.');
     }
 });
