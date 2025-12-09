@@ -16,7 +16,7 @@ import cors from 'cors'
 // Crear la aplicación de Express
 const app = express();
 const MONGODB_URI = process.env.VITE_MONGODB_URI
-const PORT = process.env.PORT || 8080;
+const PORT = 8080;
 
 
 // Middleware para manejar JSON

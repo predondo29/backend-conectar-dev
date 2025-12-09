@@ -1,5 +1,6 @@
-import { MercadoPagoConfig, Preference } from "mercadopago";
+import { MercadoPagoConfig, Preference, Payment } from "mercadopago";
 import 'dotenv/config';
+import userService from '../services/user.service.js';
 
 
 export const createPreference = async (req, res) => {
@@ -21,6 +22,9 @@ export const createPreference = async (req, res) => {
 
         const preference = new Preference(client);
 
+        // Define notification URL based on environment (needs a public URL for production)
+        const notificationUrl = `${process.env.VITE_BACKEND_API_URI || 'http://localhost:3000'}/api/mercadopago/webhook`;
+
         const result = await preference.create({
             body: {
                 items: [
@@ -38,6 +42,7 @@ export const createPreference = async (req, res) => {
                 },
                 auto_return: "approved",
                 external_reference: externalReference,
+                notification_url: notificationUrl
             }
         });
 
@@ -51,5 +56,41 @@ export const createPreference = async (req, res) => {
             stack: error.stack,
             detail: error
         });
+    }
+};
+
+export const receiveWebhook = async (req, res) => {
+    try {
+        const paymentId = req.query.id || req.query['data.id'];
+        const topic = req.query.topic || req.query.type;
+
+        // MercadoPago a veces envía 'payment' o 'merchant_order'
+        // Nos interesa cuando el pago se actualiza.
+        if (topic === 'payment' || req.query['type'] === 'payment') {
+
+            const token = process.env.MERCADOPAGO_ACCESS_TOKEN || process.env.VITE_MERCADOPAGO_ACCESS_TOKEN;
+            const client = new MercadoPagoConfig({ accessToken: token });
+            const payment = new Payment(client);
+
+            const data = await payment.get({ id: paymentId });
+
+            // Verificamos si el pago está aprobado
+            if (data.status === 'approved') {
+                const userId = data.external_reference;
+
+                if (userId && userId !== 'unknown_user') {
+                    // Actualizamos el usuario a Premium
+                    // Por defecto asumimos plan 'premium' si no viene especificado en otro lado
+                    await userService.convertirAPremium(userId, 'premium');
+                    console.log(`Usuario ${userId} actualizado a PREMIUM exitosamente por webhook.`);
+                }
+            }
+        }
+
+        res.sendStatus(200);
+
+    } catch (error) {
+        console.error("Error en webhook de MercadoPago:", error);
+        res.status(500).json({ error: error.message });
     }
 };
