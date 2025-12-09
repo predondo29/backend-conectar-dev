@@ -37,8 +37,7 @@ export const createPreference = async (req, res) => {
                 ],
                 back_urls: {
                     success: `${process.env.VITE_FRONTEND_URI || 'http://localhost:5173'}/dashboard?status=approved`,
-                    failure: `${process.env.VITE_FRONTEND_URI || 'http://localhost:5173'}/free-to-premium?status=failure`,
-                    pending: `${process.env.VITE_FRONTEND_URI || 'http://localhost:5173'}/free-to-premium?status=pending`
+                    failure: `${process.env.VITE_FRONTEND_URI || 'http://localhost:5173'}/dashboard?status=failure`
                 },
                 auto_return: "approved",
                 external_reference: externalReference,
